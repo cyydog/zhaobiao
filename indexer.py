@@ -25,20 +25,28 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 32
 
 
-def wait_for_qdrant(host: str, port: int, retries: int = 30, interval: float = 2.0):
-    """等待 Qdrant 服务就绪"""
-    from qdrant_client.http.exceptions import UnexpectedResponse
-    import httpx
+def connect_qdrant():
+    """连接 Qdrant（支持远程/内存/本地路径三种模式，无需 Docker）"""
+    if os.getenv("QDRANT_HOST") == ":memory:":
+        logger.info("使用 Qdrant 内存模式")
+        return QdrantClient(":memory:")
+    if os.getenv("QDRANT_PATH"):
+        logger.info(f"使用 Qdrant 本地路径模式: {os.getenv('QDRANT_PATH')}")
+        return QdrantClient(path=os.getenv("QDRANT_PATH"))
+
+    host = os.getenv("QDRANT_HOST", "localhost")
+    port = int(os.getenv("QDRANT_PORT", "6333"))
+    logger.info(f"连接 Qdrant 服务: {host}:{port}")
 
     client = QdrantClient(host=host, port=port)
-    for i in range(retries):
+    for i in range(30):
         try:
             client.get_collections()
             logger.info("Qdrant 服务已就绪")
             return client
         except Exception as e:
-            logger.info(f"等待 Qdrant 就绪... ({i+1}/{retries}): {e}")
-            time.sleep(interval)
+            logger.info(f"等待 Qdrant 就绪... ({i+1}/30): {e}")
+            time.sleep(2)
     logger.error("Qdrant 服务未能在规定时间内启动，退出")
     sys.exit(1)
 
@@ -107,11 +115,7 @@ def index_articles(client: QdrantClient, model: SentenceTransformer):
 
 
 def main():
-    qdrant_host = os.getenv("QDRANT_HOST", "localhost")
-    qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
-
-    logger.info(f"连接 Qdrant: {qdrant_host}:{qdrant_port}")
-    client = wait_for_qdrant(qdrant_host, qdrant_port)
+    client = connect_qdrant()
 
     logger.info(f"加载 Embedding 模型: {EMBEDDING_MODEL}")
     model = SentenceTransformer(EMBEDDING_MODEL)

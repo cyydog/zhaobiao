@@ -27,8 +27,26 @@ EMBEDDING_DIM   = 512
 
 class LawRetriever:
     def __init__(self, qdrant_host: str = None, qdrant_port: int = 6333):
-        host = qdrant_host or os.getenv("QDRANT_HOST", "localhost")
-        self.client = QdrantClient(host=host, port=qdrant_port)
+        # 优先使用内存模式或本地路径，不依赖网络服务
+        if os.getenv("QDRANT_HOST") == ":memory:":
+            # 内存模式
+            self.client = QdrantClient(":memory:")
+        elif os.getenv("QDRANT_PATH"):
+            # 本地路径模式
+            self.client = QdrantClient(path=os.getenv("QDRANT_PATH"))
+        else:
+            # 默认使用内存模式（本地开发）
+            try:
+                # 尝试连接到网络服务
+                host = qdrant_host or os.getenv("QDRANT_HOST", "localhost")
+                self.client = QdrantClient(host=host, port=qdrant_port)
+                # 测试连接
+                self.client.get_collections()
+            except Exception:
+                # 连接失败，降级到内存模式
+                print("⚠️  无法连接到 Qdrant 服务，使用内存模式运行")
+                self.client = QdrantClient(":memory:")
+        
         self.model  = SentenceTransformer(EMBEDDING_MODEL)
         self._ensure_doc_collection()
 
